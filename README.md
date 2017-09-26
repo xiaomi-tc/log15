@@ -150,6 +150,3 @@ every second rotate once.
 
 ## License
 Apache
-
-## License
-Apache
