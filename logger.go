@@ -86,6 +86,9 @@ type Logger interface {
 	// SetHandler updates the logger to write records to the specified handler.
 	SetHandler(h Handler)
 
+	// Set setLv value. only level below this can be output --[stevenimi]
+	SetOutLevel(l Lvl)
+
 	// Log a message at the given level with context key/value pairs
 	Debug(msg string, ctx ...interface{})
 	Info(msg string, ctx ...interface{})
@@ -97,25 +100,30 @@ type Logger interface {
 type logger struct {
 	ctx []interface{}
 	h   *swapHandler
+	// keep the set level,only below the level can be output --[stevenmi]
+	setLv Lvl
 }
 
 func (l *logger) write(msg string, lvl Lvl, ctx []interface{}) {
-	l.h.Log(&Record{
-		Time: time.Now(),
-		Lvl:  lvl,
-		Msg:  msg,
-		Ctx:  newContext(l.ctx, ctx),
-		Call: stack.Caller(2),
-		KeyNames: RecordKeyNames{
-			Time: timeKey,
-			Msg:  msgKey,
-			Lvl:  lvlKey,
-		},
-	})
+	if lvl <= l.setLv { //  --[stevenmi]
+		l.h.Log(&Record{
+			Time: time.Now(),
+			Lvl:  lvl,
+			Msg:  msg,
+			Ctx:  newContext(l.ctx, ctx),
+			Call: stack.Caller(2),
+			KeyNames: RecordKeyNames{
+				Time: timeKey,
+				Msg:  msgKey,
+				Lvl:  lvlKey,
+			},
+		})
+	} // --[stevenmi]
 }
 
 func (l *logger) New(ctx ...interface{}) Logger {
-	child := &logger{newContext(l.ctx, ctx), new(swapHandler)}
+	//child := &logger{newContext(l.ctx, ctx), new(swapHandler)}  // increase one parament --[stevenmi]
+	child := &logger{newContext(l.ctx, ctx), new(swapHandler), LvlDebug}
 	child.SetHandler(l.h)
 	return child
 }
@@ -126,6 +134,14 @@ func newContext(prefix []interface{}, suffix []interface{}) []interface{} {
 	n := copy(newCtx, prefix)
 	copy(newCtx[n:], normalizedSuffix)
 	return newCtx
+}
+
+// implement , set the Level --[stevenmi]
+func (l *logger) SetOutLevel(level Lvl) {
+	if level >= LvlCrit && level <= LvlDebug {
+		l.setLv = level
+	}
+	return
 }
 
 func (l *logger) Debug(msg string, ctx ...interface{}) {

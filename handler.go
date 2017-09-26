@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
+	//"os"
 	"reflect"
 	"sync"
 
 	"github.com/go-stack/stack"
+
+	"gopkg.in/natefinch/lumberjack.v2" // --[stevenmi]
 )
 
 // A Logger prints its log records by writing to a Handler.
@@ -62,11 +64,61 @@ func SyncHandler(h Handler) Handler {
 // using the given format. If the path
 // already exists, FileHandler will append to the given file. If it does not,
 // FileHandler will create the file with mode 0644.
+/*
 func FileHandler(path string, fmtr Format) (Handler, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return nil, err
 	}
+	return closingHandler{f, StreamHandler(f, fmtr)}, nil
+}
+*/
+
+// storage rotate file paraments --[stevenmi]
+type rotate_conf struct {
+	MaxSize        int // megabytes
+	MaxAge         int
+	MaxBackup      int //days
+	Compress       bool
+	IO_WriteCloser *lumberjack.Logger
+}
+
+func (r *rotate_conf) SetLoggerWriteCloser(f *lumberjack.Logger) {
+	r.IO_WriteCloser = f
+}
+
+func (r *rotate_conf) GetLoggerWriteCloser() *lumberjack.Logger {
+	return r.IO_WriteCloser
+}
+
+func (r *rotate_conf) SetRotatePara(maxsize, maxage, maxbackup int, compress bool) {
+	r.MaxSize, r.MaxAge, r.MaxBackup, r.Compress = maxsize, maxage, maxbackup, compress
+}
+
+var rotateConf = &rotate_conf{1, 20, 10, true, nil} // default: 1M, 20day, 10 file, compress
+
+func LogRotate() {
+	if rotateConf.IO_WriteCloser != nil {
+		rotateConf.GetLoggerWriteCloser().Rotate()
+	}
+}
+
+func FileHandler(path string, fmtr Format) (Handler, error) {
+	f := &lumberjack.Logger{
+		Filename:   path,
+		MaxSize:    rotateConf.MaxSize, // megabytes
+		MaxBackups: rotateConf.MaxBackup,
+		MaxAge:     rotateConf.MaxAge, // days
+		Compress:   rotateConf.Compress,
+		LocalTime:  true,
+	}
+
+	rotateConf.SetLoggerWriteCloser(f)
+
+	//f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	//if err != nil {
+	//	return nil, err
+	//}
 	return closingHandler{f, StreamHandler(f, fmtr)}, nil
 }
 

@@ -22,7 +22,8 @@ func init() {
 		StderrHandler = StreamHandler(colorable.NewColorableStderr(), TerminalFormat())
 	}
 
-	root = &logger{[]interface{}{}, new(swapHandler)}
+	//root = &logger{[]interface{}{}, new(swapHandler)}
+	root = &logger{[]interface{}{}, new(swapHandler), LvlDebug}
 	root.SetHandler(StdoutHandler)
 }
 
@@ -35,6 +36,10 @@ func New(ctx ...interface{}) Logger {
 // Root returns the root logger
 func Root() Logger {
 	return root
+}
+
+func SetOutLevel(level Lvl) {
+	root.SetOutLevel(level)
 }
 
 // The following functions bypass the exported logger methods (logger.Debug,
