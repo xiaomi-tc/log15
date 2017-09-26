@@ -95,7 +95,7 @@ func (r *rotate_conf) SetRotatePara(maxsize, maxage, maxbackup int, compress boo
 	r.MaxSize, r.MaxAge, r.MaxBackup, r.Compress = maxsize, maxage, maxbackup, compress
 }
 
-var rotateConf = &rotate_conf{100, 20, 100, true, nil} // default: 100M, 20day, 100 file, compress
+var rotateConf = &rotate_conf{100, 10, 30, true, nil} // default: 100M, 10day, 30 file, compress
 
 func LogRotate() {
 	if rotateConf.IO_WriteCloser != nil {
