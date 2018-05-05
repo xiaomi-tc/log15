@@ -12,7 +12,8 @@ import (
 )
 
 const (
-	timeFormat     = "2006-01-02T15:04:05-0700"
+	//timeFormat     = "2006-01-02T15:04:05-0700"
+	timeFormat     = "2006/01/02 15:04:05"
 	termTimeFormat = "01-02|15:04:05"
 	floatFormat    = 'f'
 	termMsgJust    = 40
@@ -63,9 +64,9 @@ func TerminalFormat() Format {
 		b := &bytes.Buffer{}
 		lvl := strings.ToUpper(r.Lvl.String())
 		if color > 0 {
-			fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s] %s ", color, lvl, r.Time.Format(termTimeFormat), r.Msg)
+			fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s][%s] %s=%s", color, lvl, r.Time.Format(termTimeFormat), r.Call.String(), r.KeyNames.Msg, r.Msg)
 		} else {
-			fmt.Fprintf(b, "[%s] [%s] %s ", lvl, r.Time.Format(termTimeFormat), r.Msg)
+			fmt.Fprintf(b, "[%s][%s][%s] %s=%s ", lvl, r.Call.String() ,r.Time.Format(termTimeFormat), r.KeyNames.Msg, r.Msg)
 		}
 
 		// try to justify the log output for short messages
@@ -86,7 +87,7 @@ func TerminalFormat() Format {
 //
 func LogfmtFormat() Format {
 	return FormatFunc(func(r *Record) []byte {
-		common := []interface{}{r.KeyNames.Time, r.Time, r.KeyNames.Lvl, r.Lvl, r.KeyNames.Msg, r.Msg}
+		common := []interface{}{r.KeyNames.Time, r.Time, r.KeyNames.Lvl, r.Lvl, r.KeyNames.Call, r.Call.String(), r.KeyNames.Msg, r.Msg}
 		buf := &bytes.Buffer{}
 		logfmt(buf, append(common, r.Ctx...), 0)
 		return buf.Bytes()
@@ -109,9 +110,16 @@ func logfmt(buf *bytes.Buffer, ctx []interface{}, color int) {
 		if color > 0 {
 			fmt.Fprintf(buf, "\x1b[%dm%s\x1b[0m=%s", color, k, v)
 		} else {
-			buf.WriteString(k)
-			buf.WriteByte('=')
+			if i<5 {
+				buf.WriteByte('[')
+			} else  {
+				buf.WriteString(k)
+				buf.WriteByte('=')
+			}
 			buf.WriteString(v)
+			if i<5 {
+				buf.WriteByte(']')
+			}
 		}
 	}
 

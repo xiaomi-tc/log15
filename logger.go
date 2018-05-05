@@ -10,6 +10,7 @@ import (
 const timeKey = "t"
 const lvlKey = "lvl"
 const msgKey = "msg"
+const callKey = "call"
 const errorKey = "LOG15_ERROR"
 
 type Lvl int
@@ -73,6 +74,7 @@ type RecordKeyNames struct {
 	Time string
 	Msg  string
 	Lvl  string
+	Call string
 }
 
 // A Logger writes key/value pairs to a Handler
@@ -116,6 +118,7 @@ func (l *logger) write(msg string, lvl Lvl, ctx []interface{}) {
 				Time: timeKey,
 				Msg:  msgKey,
 				Lvl:  lvlKey,
+				Call: callKey,
 			},
 		})
 	} // --[stevenmi]
