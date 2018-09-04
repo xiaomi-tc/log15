@@ -10,7 +10,10 @@ import (
 
 	"github.com/go-stack/stack"
 
+	"bytes"
 	"gopkg.in/natefinch/lumberjack.v2" // --[stevenmi]
+	"sync/atomic"
+	"errors"
 )
 
 // A Logger prints its log records by writing to a Handler.
@@ -124,6 +127,112 @@ func FileHandler(path string, fmtr Format) (Handler, error) {
 	//	return nil, err
 	//}
 	return closingHandler{f, StreamHandler(f, fmtr)}, nil
+}
+
+type UDPLogger struct {
+	logAgentAddr string
+	who          string
+	conn         net.Conn
+	count        uint32
+}
+
+func (u *UDPLogger) init() (err error) {
+	u.conn, _ = net.Dial("udp", u.logAgentAddr)
+	u.sayHello()
+
+	//go func() {
+	//	for {
+	//		var buf [1024]byte
+	//		u.conn.(*net.UDPConn).ReadFromUDP(buf[0:])
+	//		if buf[0] == 0xEF && buf[1] == 0xEE {
+	//			//fmt.Println(string(buf[2:]))
+	//		}
+	//	}
+	//}()
+	//
+	//go func() {
+	//	timeout := time.Tick(5*time.Second)
+	//	for {
+	//		select{
+	//		case <- timeout:
+	//			u.sayHello()
+	//		}
+	//	}
+	//}()
+	return
+}
+
+func (u *UDPLogger) sayHello() {
+	var buf bytes.Buffer
+	buf.Write([]byte{0xEF, 0xEE})
+	buf.Write([]byte("service:" + u.who))
+	u.conn.Write(buf.Bytes())
+}
+
+func (u *UDPLogger) Write(p []byte) (n int, err error) {
+	if atomic.AddUint32(&u.count, 1) >= 100 {
+		atomic.StoreUint32(&u.count, 0)
+		u.sayHello()
+	}
+
+	var cursor = 0
+	for {
+		if len(p) > cursor+1024 {
+			u.conn.Write(p[cursor : cursor+1024])
+			cursor = cursor + 1024
+		} else {
+			u.conn.Write(p[cursor:])
+			break
+		}
+	}
+	return len(p), nil //local ip, will not err
+}
+
+//func (u *UDPLogger) Close() error {
+//	return u.conn.Close()
+//}
+
+type Option func(u *UDPLogger)
+
+func WithDstAddr(dstAddr string) Option {
+	return func(u *UDPLogger) {
+		u.logAgentAddr = dstAddr
+	}
+}
+
+func NetFileHandler(path, serviceName string, fmtr Format, opts ...Option) (Handler, error) {
+	if serviceName == "" {
+		return nil, errors.New("serviceName illegal")
+	}
+	u := &UDPLogger{
+		who: serviceName,
+	}
+
+	for _, opt := range opts {
+		opt(u)
+	}
+
+	if u.logAgentAddr == "" {
+		u.logAgentAddr = "127.0.0.1:9999" //default
+	}
+
+	u.init()
+
+	//if needLocalLog {
+	f := &lumberjack.Logger{
+		Filename:   path,
+		MaxSize:    rotateConf.MaxSize, // megabytes
+		MaxBackups: rotateConf.MaxBackup,
+		MaxAge:     rotateConf.MaxAge, // days
+		Compress:   rotateConf.Compress,
+		LocalTime:  true,
+	}
+
+	rotateConf.SetLoggerWriteCloser(f)
+	return closingHandler{f, MultiHandler(StreamHandler(f, fmtr), StreamHandler(u, fmtr))}, nil
+	//} else {
+	//	return closingHandler{u, StreamHandler(u, fmtr)}, nil
+	//}
 }
 
 // NetHandler opens a socket to the given address and writes records

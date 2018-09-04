@@ -9,6 +9,7 @@ import (
 	"net"
 	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -265,7 +266,6 @@ func TestNetHandler(t *testing.T) {
 			errs <- fmt.Errorf("Failed to read string: %v", err)
 			return
 		}
-
 		got := s[27:]
 		expected := "lvl=info msg=test x=1\n"
 		if got != expected {
@@ -291,6 +291,21 @@ func TestNetHandler(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+}
+
+func TestNetFileHandler(t *testing.T) {
+	t.Parallel()
+
+	testlog := strings.Repeat("1234567890", 50)
+
+	lg := New()
+	h1, err := NetFileHandler("TestNetFileHandler.log", "MicroService-1", LogfmtFormat(), WithDstAddr("127.0.0.1:9999"))
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	lg.SetHandler(h1)
+	lg.Info("test", "x", testlog) //testlog 512byte
 }
 
 func TestMatchFilterHandler(t *testing.T) {
