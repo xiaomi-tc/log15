@@ -70,3 +70,8 @@ func Error(msg string, ctx ...interface{}) {
 func Crit(msg string, ctx ...interface{}) {
 	root.write(msg, LvlCrit, ctx)
 }
+
+// MetaDebug is used to mark meta by caller
+func MetaDebug(msg string, metaType Meta, metaData interface{}, ctx ...interface{}) {
+	root.writeMeta(msg, LvlDebug, metaType, metaData, ctx)
+}

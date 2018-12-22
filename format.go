@@ -66,7 +66,7 @@ func TerminalFormat() Format {
 		if color > 0 {
 			fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s][%s] %s=%s", color, lvl, r.Time.Format(termTimeFormat), r.Call.String(), r.KeyNames.Msg, r.Msg)
 		} else {
-			fmt.Fprintf(b, "[%s][%s][%s] %s=%s ", lvl, r.Call.String() ,r.Time.Format(termTimeFormat), r.KeyNames.Msg, r.Msg)
+			fmt.Fprintf(b, "[%s][%s][%s] %s=%s ", lvl, r.Call.String(), r.Time.Format(termTimeFormat), r.KeyNames.Msg, r.Msg)
 		}
 
 		// try to justify the log output for short messages
@@ -87,6 +87,11 @@ func TerminalFormat() Format {
 //
 func LogfmtFormat() Format {
 	return FormatFunc(func(r *Record) []byte {
+		// assignment in serial processing
+		logLevel = byte(r.Lvl)
+		logMetaKey = r.MetaK
+		logMetaValue = r.MetaV
+
 		common := []interface{}{r.KeyNames.Time, r.Time, r.KeyNames.Lvl, r.Lvl, r.KeyNames.Call, r.Call.String(), r.KeyNames.Msg, r.Msg}
 		buf := &bytes.Buffer{}
 		logfmt(buf, append(common, r.Ctx...), 0)
@@ -110,14 +115,14 @@ func logfmt(buf *bytes.Buffer, ctx []interface{}, color int) {
 		if color > 0 {
 			fmt.Fprintf(buf, "\x1b[%dm%s\x1b[0m=%s", color, k, v)
 		} else {
-			if i<5 {
+			if i < 5 {
 				buf.WriteByte('[')
-			} else  {
+			} else {
 				buf.WriteString(k)
 				buf.WriteByte('=')
 			}
 			buf.WriteString(v)
-			if i<5 {
+			if i < 5 {
 				buf.WriteByte(']')
 			}
 		}

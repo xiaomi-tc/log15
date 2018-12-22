@@ -13,6 +13,13 @@ const msgKey = "msg"
 const callKey = "call"
 const errorKey = "LOG15_ERROR"
 
+var (
+	//global variables
+	logLevel     byte //used for UDPLogger, 256 types enough
+	logMetaKey   string
+	logMetaValue string
+)
+
 type Lvl int
 
 const (
@@ -60,11 +67,28 @@ func LvlFromString(lvlString string) (Lvl, error) {
 	}
 }
 
+type Meta int
+
+const (
+	Order Meta = iota
+)
+
+func (m Meta) String() string {
+	switch m {
+	case Order:
+		return "order"
+	default:
+		panic("bad meta")
+	}
+}
+
 // A Record is what a Logger asks its handler to write
 type Record struct {
 	Time     time.Time
 	Lvl      Lvl
 	Msg      string
+	MetaK    string
+	MetaV    string
 	Ctx      []interface{}
 	Call     stack.Call
 	KeyNames RecordKeyNames
@@ -122,6 +146,34 @@ func (l *logger) write(msg string, lvl Lvl, ctx []interface{}) {
 			},
 		})
 	} // --[stevenmi]
+}
+
+func (l *logger) writeMeta(msg string, lvl Lvl, metaType Meta, metaData interface{}, ctx []interface{}) {
+	if lvl <= l.setLv {
+		metaK := metaType.String()
+		metaV := formatLogfmtValue(metaData)
+
+		newCtx := make([]interface{}, 0, len(ctx)+2)
+		newCtx = append(newCtx, metaK)
+		newCtx = append(newCtx, metaV)
+		newCtx = append(newCtx, ctx...)
+
+		l.h.Log(&Record{
+			Time:  time.Now(),
+			Lvl:   lvl,
+			Msg:   msg,
+			MetaK: metaK,
+			MetaV: metaV,
+			Ctx:   newContext(l.ctx, newCtx),
+			Call:  stack.Caller(2),
+			KeyNames: RecordKeyNames{
+				Time: timeKey,
+				Msg:  msgKey,
+				Lvl:  lvlKey,
+				Call: callKey,
+			},
+		})
+	}
 }
 
 func (l *logger) New(ctx ...interface{}) Logger {

@@ -11,9 +11,11 @@ import (
 	"github.com/go-stack/stack"
 
 	"bytes"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"gopkg.in/natefinch/lumberjack.v2" // --[stevenmi]
 	"sync/atomic"
-	"errors"
 )
 
 // A Logger prints its log records by writing to a Handler.
@@ -129,14 +131,21 @@ func FileHandler(path string, fmtr Format) (Handler, error) {
 	return closingHandler{f, StreamHandler(f, fmtr)}, nil
 }
 
+var udpBufferPool *sync.Pool
+
 type UDPLogger struct {
 	logAgentAddr string
 	who          string
 	conn         net.Conn
 	count        uint32
+	WriteBuf     []byte
 }
 
 func (u *UDPLogger) init() (err error) {
+	udpBufferPool = &sync.Pool{
+		New: func() interface{} { return new(bytes.Buffer) },
+	}
+
 	u.conn, _ = net.Dial("udp", u.logAgentAddr)
 	u.sayHello()
 
@@ -162,11 +171,39 @@ func (u *UDPLogger) init() (err error) {
 	return
 }
 
+const (
+	MagicNum = 0xEEEF
+	Version  = 2
+)
+
+type MsgType uint8
+
+const (
+	Hello_Packet MsgType = iota
+	Data_Packet
+)
+
+type HelloPacket struct {
+	ServiceName string `json:"serviceName"`
+}
+
 func (u *UDPLogger) sayHello() {
-	var buf bytes.Buffer
-	buf.Write([]byte{0xEF, 0xEE})
-	buf.Write([]byte("service:" + u.who))
-	u.conn.Write(buf.Bytes())
+	body := HelloPacket{
+		ServiceName: u.who,
+	}
+	bodyBuf, _ := json.Marshal(&body)
+
+	e := udpBufferPool.Get().(*bytes.Buffer)
+	binary.Write(e, binary.BigEndian, uint16(MagicNum))
+	binary.Write(e, binary.BigEndian, uint8(Version))
+	binary.Write(e, binary.BigEndian, uint8(Hello_Packet))
+	binary.Write(e, binary.BigEndian, uint16(len(bodyBuf)))
+
+	e.Write(bodyBuf)
+	u.conn.Write(e.Bytes())
+
+	e.Reset()
+	udpBufferPool.Put(e)
 }
 
 func (u *UDPLogger) Write(p []byte) (n int, err error) {
@@ -175,22 +212,52 @@ func (u *UDPLogger) Write(p []byte) (n int, err error) {
 		u.sayHello()
 	}
 
+	e := udpBufferPool.Get().(*bytes.Buffer)
+	binary.Write(e, binary.BigEndian, uint16(MagicNum))
+	binary.Write(e, binary.BigEndian, uint8(Version))
+	binary.Write(e, binary.BigEndian, uint8(Data_Packet))
+	binary.Write(e, binary.BigEndian, logLevel)
+	if logMetaKey == "" && logMetaValue == "" {
+		binary.Write(e, binary.BigEndian, uint16(0))
+	} else {
+		m := make(map[string]string)
+		m[logMetaKey] = logMetaValue
+		metaBuf, err := json.Marshal(m)
+		if err == nil {
+			binary.Write(e, binary.BigEndian, uint16(len(metaBuf)))
+			e.Write(metaBuf)
+		} else {
+			binary.Write(e, binary.BigEndian, uint16(0))
+		}
+	}
+	e.Write(p)
+
+	b := e.Bytes()
+	length := e.Len()
+
 	var cursor = 0
 	for {
-		if len(p) > cursor+1024 {
-			u.conn.Write(p[cursor : cursor+1024])
+		if length > cursor+1024 {
+			u.conn.Write(b[cursor : cursor+1024])
 			cursor = cursor + 1024
 		} else {
-			u.conn.Write(p[cursor:])
+			u.conn.Write(b[cursor:])
 			break
 		}
 	}
-	return len(p), nil //local ip, will not err
+
+	logMetaKey = ""
+	logMetaValue = ""
+
+	e.Reset()
+	udpBufferPool.Put(e)
+
+	return length, nil //local ip, will not err
 }
 
-//func (u *UDPLogger) Close() error {
-//	return u.conn.Close()
-//}
+func (u *UDPLogger) Close() error {
+	return u.conn.Close()
+}
 
 type Option func(u *UDPLogger)
 
@@ -231,7 +298,7 @@ func NetFileHandler(path, serviceName string, fmtr Format, opts ...Option) (Hand
 	rotateConf.SetLoggerWriteCloser(f)
 	return closingHandler{f, MultiHandler(StreamHandler(f, fmtr), StreamHandler(u, fmtr))}, nil
 	//} else {
-	//	return closingHandler{u, StreamHandler(u, fmtr)}, nil
+	//      return closingHandler{u, StreamHandler(u, fmtr)}, nil
 	//}
 }
 
