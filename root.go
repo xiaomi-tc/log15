@@ -75,3 +75,8 @@ func Crit(msg string, ctx ...interface{}) {
 func MetaDebug(msg string, metaType Meta, metaData interface{}, ctx ...interface{}) {
 	root.writeMeta(msg, LvlDebug, metaType, metaData, ctx)
 }
+
+// GormInfo is used to support gorm logger
+func GormInfo(msg string, caller string, ctx ...interface{}) {
+	root.writeGorm(msg, LvlInfo, caller, ctx)
+}
