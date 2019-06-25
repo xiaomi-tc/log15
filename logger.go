@@ -71,12 +71,15 @@ type Meta int
 
 const (
 	Order Meta = iota
+	BaseMonitor
 )
 
 func (m Meta) String() string {
 	switch m {
 	case Order:
 		return "order"
+	case BaseMonitor:
+		return "baseMonitor"
 	default:
 		panic("bad meta")
 	}
