@@ -94,6 +94,7 @@ type Record struct {
 	MetaV    string
 	Ctx      []interface{}
 	Call     stack.Call
+	CustomCaller string
 	KeyNames RecordKeyNames
 }
 
@@ -169,6 +170,27 @@ func (l *logger) writeMeta(msg string, lvl Lvl, metaType Meta, metaData interfac
 			MetaV: metaV,
 			Ctx:   newContext(l.ctx, newCtx),
 			Call:  stack.Caller(2),
+			KeyNames: RecordKeyNames{
+				Time: timeKey,
+				Msg:  msgKey,
+				Lvl:  lvlKey,
+				Call: callKey,
+			},
+		})
+	}
+}
+
+func (l *logger) writeGorm(msg string, lvl Lvl, caller string, ctx []interface{}) {
+	if lvl <= l.setLv {
+		newCtx := make([]interface{}, 0, len(ctx))
+		newCtx = append(newCtx, ctx...)
+
+		l.h.Log(&Record{
+			Time:  time.Now(),
+			Lvl:   lvl,
+			Msg:   msg,
+			Ctx:   newContext(l.ctx, newCtx),
+			CustomCaller:caller,
 			KeyNames: RecordKeyNames{
 				Time: timeKey,
 				Msg:  msgKey,

@@ -92,7 +92,14 @@ func LogfmtFormat() Format {
 		logMetaKey = r.MetaK
 		logMetaValue = r.MetaV
 
-		common := []interface{}{r.KeyNames.Time, r.Time, r.KeyNames.Lvl, r.Lvl, r.KeyNames.Call, r.Call.String(), r.KeyNames.Msg, r.Msg}
+		var caller string
+		if r.CustomCaller == "" {
+			caller = r.Call.String()
+		} else {
+			caller = r.CustomCaller
+		}
+
+		common := []interface{}{r.KeyNames.Time, r.Time, r.KeyNames.Lvl, r.Lvl, r.KeyNames.Call, caller, r.KeyNames.Msg, r.Msg}
 		buf := &bytes.Buffer{}
 		logfmt(buf, append(common, r.Ctx...), 0)
 		return buf.Bytes()
