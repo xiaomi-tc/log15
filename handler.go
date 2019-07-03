@@ -53,6 +53,18 @@ func StreamHandler(wr io.Writer, fmtr Format) Handler {
 	return LazyHandler(SyncHandler(h))
 }
 
+// Same as StreamHandler() except filting the baseMonitor Meta meaasage
+func SelfStreamHandler(wr io.Writer, fmtr Format) Handler {		// -- stevenmi 2019-0703
+	h := FuncHandler(func(r *Record) error {
+		if r.MetaK == BaseMonitor.String() {
+			return nil
+		}
+		_, err := wr.Write(fmtr.Format(r))
+		return err
+	})
+	return LazyHandler(SyncHandler(h))
+}
+
 // SyncHandler can be wrapped around a handler to guarantee that
 // only a single Log operation can proceed at a time. It's necessary
 // for thread-safe concurrent writes.
@@ -296,7 +308,11 @@ func NetFileHandler(path, serviceName string, fmtr Format, opts ...Option) (Hand
 	}
 
 	rotateConf.SetLoggerWriteCloser(f)
-	return closingHandler{f, MultiHandler(StreamHandler(f, fmtr), StreamHandler(u, fmtr))}, nil
+
+	// filte baseMonitor Meta Meassge in SelfStreamHandler()
+	return closingHandler{f, MultiHandler(SelfStreamHandler(f, fmtr), StreamHandler(u, fmtr))}, nil
+
+	//return closingHandler{f, MultiHandler(StreamHandler(f, fmtr), StreamHandler(u, fmtr))}, nil
 	//} else {
 	//      return closingHandler{u, StreamHandler(u, fmtr)}, nil
 	//}
