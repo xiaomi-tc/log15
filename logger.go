@@ -12,6 +12,7 @@ const lvlKey = "lvl"
 const msgKey = "msg"
 const callKey = "call"
 const errorKey = "LOG15_ERROR"
+const reqIDKey = "reqid"
 
 var (
 	//global variables
@@ -95,6 +96,7 @@ type Record struct {
 	Ctx      []interface{}
 	Call     stack.Call
 	CustomCaller string
+	RequestID string
 	KeyNames RecordKeyNames
 }
 
@@ -103,6 +105,7 @@ type RecordKeyNames struct {
 	Msg  string
 	Lvl  string
 	Call string
+	ReqID string
 }
 
 // A Logger writes key/value pairs to a Handler
@@ -136,6 +139,13 @@ type logger struct {
 
 func (l *logger) write(msg string, lvl Lvl, ctx []interface{}) {
 	if lvl <= l.setLv { //  --[stevenmi]
+		// add requestid at log head    -- 2019-9-17
+		reqID :=""
+		value,ok := GetReqIDForGoroutine()
+		if ok {
+			reqID = value.(string)
+		}
+
 		l.h.Log(&Record{
 			Time: time.Now(),
 			Lvl:  lvl,
@@ -147,7 +157,9 @@ func (l *logger) write(msg string, lvl Lvl, ctx []interface{}) {
 				Msg:  msgKey,
 				Lvl:  lvlKey,
 				Call: callKey,
+				ReqID: reqIDKey,
 			},
+			RequestID: reqID,
 		})
 	} // --[stevenmi]
 }
@@ -162,6 +174,13 @@ func (l *logger) writeMeta(msg string, lvl Lvl, metaType Meta, metaData interfac
 		newCtx = append(newCtx, metaV)
 		newCtx = append(newCtx, ctx...)
 
+		// add requestid at log head    -- 2019-9-17
+		reqID :=""
+		value,ok := GetReqIDForGoroutine()
+		if ok {
+			reqID = value.(string)
+		}
+
 		l.h.Log(&Record{
 			Time:  time.Now(),
 			Lvl:   lvl,
@@ -175,7 +194,9 @@ func (l *logger) writeMeta(msg string, lvl Lvl, metaType Meta, metaData interfac
 				Msg:  msgKey,
 				Lvl:  lvlKey,
 				Call: callKey,
+				ReqID: reqIDKey,
 			},
+			RequestID: reqID,
 		})
 	}
 }
@@ -196,6 +217,7 @@ func (l *logger) writeGorm(msg string, lvl Lvl, caller string, ctx []interface{}
 				Msg:  msgKey,
 				Lvl:  lvlKey,
 				Call: callKey,
+				ReqID: reqIDKey,
 			},
 		})
 	}

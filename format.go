@@ -64,18 +64,31 @@ func TerminalFormat() Format {
 		b := &bytes.Buffer{}
 		lvl := strings.ToUpper(r.Lvl.String())
 		if color > 0 {
-			fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s][%s] %s=%s", color, lvl, r.Time.Format(termTimeFormat), r.Call.String(), r.KeyNames.Msg, r.Msg)
+			if r.RequestID != "" {
+				fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s][%s][%s=%s] ", color, lvl, r.Time.Format(termTimeFormat),
+					r.Call.String(), r.KeyNames.ReqID, r.RequestID)
+			} else {
+				fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s][%s] ", color, lvl, r.Time.Format(termTimeFormat), r.Call.String())
+			}
 		} else {
-			fmt.Fprintf(b, "[%s][%s][%s] %s=%s ", lvl, r.Call.String(), r.Time.Format(termTimeFormat), r.KeyNames.Msg, r.Msg)
+			if r.RequestID != "" {
+				fmt.Fprintf(b, "[%s][%s][%s][%s=%s] ", lvl, r.Call.String(), r.Time.Format(termTimeFormat),
+					r.KeyNames.ReqID, r.RequestID)
+			} else {
+				fmt.Fprintf(b, "[%s][%s][%s] ", lvl, r.Time.Format(termTimeFormat), r.Call.String())
+			}
 		}
 
 		// try to justify the log output for short messages
-		if len(r.Ctx) > 0 && len(r.Msg) < termMsgJust {
-			b.Write(bytes.Repeat([]byte{' '}, termMsgJust-len(r.Msg)))
-		}
+		//if len(r.Ctx) > 0 && len(r.Msg) < termMsgJust {
+		//	b.Write(bytes.Repeat([]byte{' '}, termMsgJust-len(r.Msg)))
+		//}
 
 		// print the keys logfmt style
-		logfmt(b, r.Ctx, color)
+		common := []interface{}{r.KeyNames.Msg, r.Msg}
+		logfmt(b, append(common, r.Ctx...), color)
+		//logfmt(b, r.Ctx, color)
+
 		return b.Bytes()
 	})
 }
@@ -99,8 +112,17 @@ func LogfmtFormat() Format {
 			caller = r.CustomCaller
 		}
 
-		common := []interface{}{r.KeyNames.Time, r.Time, r.KeyNames.Lvl, r.Lvl, r.KeyNames.Call, caller, r.KeyNames.Msg, r.Msg}
+		// create log head  -- [steven] 2019-9-18
 		buf := &bytes.Buffer{}
+		if r.RequestID != "" {
+			fmt.Fprintf(buf, "[%s] [%s] [%s] [%s=%s] ", r.Time.Format(timeFormat),r.Lvl, caller, r.KeyNames.ReqID, r.RequestID)
+		} else {
+			fmt.Fprintf(buf, "[%s] [%s] [%s] ", r.Time.Format(timeFormat),r.Lvl, caller)
+		}
+
+		//common := []interface{}{r.KeyNames.Time, r.Time, r.KeyNames.Lvl, r.Lvl, r.KeyNames.Call, caller}
+		common := []interface{}{r.KeyNames.Msg, r.Msg}
+
 		logfmt(buf, append(common, r.Ctx...), 0)
 		return buf.Bytes()
 	})
@@ -122,16 +144,22 @@ func logfmt(buf *bytes.Buffer, ctx []interface{}, color int) {
 		if color > 0 {
 			fmt.Fprintf(buf, "\x1b[%dm%s\x1b[0m=%s", color, k, v)
 		} else {
-			if i < 5 {
-				buf.WriteByte('[')
-			} else {
-				buf.WriteString(k)
-				buf.WriteByte('=')
-			}
-			buf.WriteString(v)
-			if i < 5 {
-				buf.WriteByte(']')
-			}
+			fmt.Fprintf(buf, " %s=%s", k, v)
+			//if i < 5 {
+			//	buf.WriteByte('[')
+			//} else {
+			//	if i==6 && k== reqIDKey{
+			//		buf.WriteByte('[')
+			//	}
+			//	buf.WriteString(k)
+			//	buf.WriteByte('=')
+			//}
+			//buf.WriteString(v)
+			//if i < 5 {
+			//	buf.WriteByte(']')
+			//} else if i==6 && k== reqIDKey{
+			//	buf.WriteByte(']')
+			//}
 		}
 	}
 
