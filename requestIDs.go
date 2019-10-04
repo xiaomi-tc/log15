@@ -12,31 +12,20 @@ type storeMeta struct  {
 }
 
 var (
-	requestIDs = map[int64]storeMeta{}
-	rwm        sync.RWMutex
+	requestIDs sync.Map
 )
 
 // Set 保存一个 RequestID, context
 func SetReqMetaForGoroutine(ctx context.Context, ID interface{}) {
-	goID := getGoID()
-	rwm.Lock()
-	defer rwm.Unlock()
-
-	requestIDs[goID] = storeMeta {
+	requestIDs.Store(getGoID(),storeMeta {
 		reqID:ID,
 		reqContext:ctx,
-	}
+	})
 }
 
 // Get 返回设置的 ReqMeta
 func getReqMetaForGoroutine() (interface{},bool) {
-	goID := getGoID()
-	rwm.RLock()
-	defer rwm.RUnlock()
-
-	id,ok := requestIDs[goID]
-	return id,ok
-	//return requestIDs[goID]
+	return requestIDs.Load(getGoID())
 }
 
 // Get 返回设置的 RequestID
@@ -59,11 +48,7 @@ func GetReqContextForGoroutine() (context.Context,bool) {
 
 // Delete 删除设置的 RequestID
 func DeleteMetaForGoroutine() {
-	goID := getGoID()
-	rwm.Lock()
-	defer rwm.Unlock()
-
-	delete(requestIDs, goID)
+	requestIDs.Delete(getGoID())
 }
 
 func getGoID() int64 {
