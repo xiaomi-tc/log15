@@ -92,34 +92,34 @@ or above in JSON formatted output to the file /var/log/service.json
 
 Logging File Names and Line Numbers
 
-This package implements three Handlers that add debugging information to the
-context, CallerFileHandler, CallerFuncHandler and CallerStackHandler. Here's
-an example that adds the source file and line number of each logging call to
-the context.
-
-    h := log.CallerFileHandler(log.StdoutHandler)
-    log.Root().SetHandler(h)
-    ...
-    log.Error("open file", "err", err)
-
-This will output a line that looks like:
-
-    lvl=eror t=2014-05-02T16:07:23-0700 msg="open file" err="file not found" caller=data.go:42
-
-Here's an example that logs the call stack rather than just the call site.
-
-    h := log.CallerStackHandler("%+v", log.StdoutHandler)
-    log.Root().SetHandler(h)
-    ...
-    log.Error("open file", "err", err)
-
-This will output a line that looks like:
-
-    lvl=eror t=2014-05-02T16:07:23-0700 msg="open file" err="file not found" stack="[pkg/data.go:42 pkg/cmd/main.go]"
-
-The "%+v" format instructs the handler to include the path of the source file
-relative to the compile time GOPATH. The github.com/go-stack/stack package
-documents the full list of formatting verbs and modifiers available.
+//This package implements three Handlers that add debugging information to the
+//context, CallerFileHandler, CallerFuncHandler and CallerStackHandler. Here's
+//an example that adds the source file and line number of each logging call to
+//the context.
+//
+//    h := log.CallerFileHandler(log.StdoutHandler)
+//    log.Root().SetHandler(h)
+//    ...
+//    log.Error("open file", "err", err)
+//
+//This will output a line that looks like:
+//
+//    lvl=eror t=2014-05-02T16:07:23-0700 msg="open file" err="file not found" caller=data.go:42
+//
+//Here's an example that logs the call stack rather than just the call site.
+//
+//    h := log.CallerStackHandler("%+v", log.StdoutHandler)
+//    log.Root().SetHandler(h)
+//    ...
+//    log.Error("open file", "err", err)
+//
+//This will output a line that looks like:
+//
+//    lvl=eror t=2014-05-02T16:07:23-0700 msg="open file" err="file not found" stack="[pkg/data.go:42 pkg/cmd/main.go]"
+//
+//The "%+v" format instructs the handler to include the path of the source file
+//relative to the compile time GOPATH. The github.com/go-stack/stack package
+//documents the full list of formatting verbs and modifiers available.
 
 Custom Handlers
 

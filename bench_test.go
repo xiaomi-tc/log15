@@ -136,7 +136,8 @@ func BenchmarkDescendant8(b *testing.B) {
 // (MIT License)
 func newLog15() Logger {
 	logger := New()
-	logger.SetHandler(StreamHandler(ioutil.Discard, JsonFormat()))
+	//logger.SetHandler(StreamHandler(ioutil.Discard, JsonFormat()))
+	logger.SetHandler(StreamHandler(ioutil.Discard, LogfmtFormat()))
 	return logger
 }
 

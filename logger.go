@@ -2,9 +2,10 @@ package log15
 
 import (
 	"fmt"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"time"
-
-	"github.com/go-stack/stack"
 )
 
 const timeKey = "t"
@@ -88,23 +89,23 @@ func (m Meta) String() string {
 
 // A Record is what a Logger asks its handler to write
 type Record struct {
-	Time     time.Time
-	Lvl      Lvl
-	Msg      string
-	MetaK    string
-	MetaV    string
-	Ctx      []interface{}
-	Call     stack.Call
+	Time         time.Time
+	Lvl          Lvl
+	Msg          string
+	MetaK        string
+	MetaV        string
+	Ctx          []interface{}
+	Call         string
 	CustomCaller string
-	RequestID string
-	KeyNames RecordKeyNames
+	RequestID    string
+	KeyNames     RecordKeyNames
 }
 
 type RecordKeyNames struct {
-	Time string
-	Msg  string
-	Lvl  string
-	Call string
+	Time  string
+	Msg   string
+	Lvl   string
+	Call  string
 	ReqID string
 }
 
@@ -140,10 +141,18 @@ type logger struct {
 func (l *logger) write(msg string, lvl Lvl, ctx []interface{}) {
 	if lvl <= l.setLv { //  --[stevenmi]
 		// add requestid at log head    -- 2019-9-17
-		reqID :=""
-		value,ok := GetReqIDForGoroutine()
+		reqID := ""
+		value, ok := GetReqIDForGoroutine()
 		if ok {
 			reqID = value.(string)
+		}
+
+		// caller
+		var caller = ""
+		_, file, line, ok := runtime.Caller(2)
+		if ok {
+			file = filepath.Base(file)
+			caller = file + ":" + strconv.Itoa(line)
 		}
 
 		l.h.Log(&Record{
@@ -151,12 +160,12 @@ func (l *logger) write(msg string, lvl Lvl, ctx []interface{}) {
 			Lvl:  lvl,
 			Msg:  msg,
 			Ctx:  newContext(l.ctx, ctx),
-			Call: stack.Caller(2),
+			Call: caller,
 			KeyNames: RecordKeyNames{
-				Time: timeKey,
-				Msg:  msgKey,
-				Lvl:  lvlKey,
-				Call: callKey,
+				Time:  timeKey,
+				Msg:   msgKey,
+				Lvl:   lvlKey,
+				Call:  callKey,
 				ReqID: reqIDKey,
 			},
 			RequestID: reqID,
@@ -175,10 +184,18 @@ func (l *logger) writeMeta(msg string, lvl Lvl, metaType Meta, metaData interfac
 		newCtx = append(newCtx, ctx...)
 
 		// add requestid at log head    -- 2019-9-17
-		reqID :=""
-		value,ok := GetReqIDForGoroutine()
+		reqID := ""
+		value, ok := GetReqIDForGoroutine()
 		if ok {
 			reqID = value.(string)
+		}
+
+		// caller
+		var caller = ""
+		_, file, line, ok := runtime.Caller(2)
+		if ok {
+			file = filepath.Base(file)
+			caller = file + ":" + strconv.Itoa(line)
 		}
 
 		l.h.Log(&Record{
@@ -188,12 +205,12 @@ func (l *logger) writeMeta(msg string, lvl Lvl, metaType Meta, metaData interfac
 			MetaK: metaK,
 			MetaV: metaV,
 			Ctx:   newContext(l.ctx, newCtx),
-			Call:  stack.Caller(2),
+			Call:  caller,
 			KeyNames: RecordKeyNames{
-				Time: timeKey,
-				Msg:  msgKey,
-				Lvl:  lvlKey,
-				Call: callKey,
+				Time:  timeKey,
+				Msg:   msgKey,
+				Lvl:   lvlKey,
+				Call:  callKey,
 				ReqID: reqIDKey,
 			},
 			RequestID: reqID,
@@ -207,16 +224,16 @@ func (l *logger) writeGorm(msg string, lvl Lvl, caller string, ctx []interface{}
 		newCtx = append(newCtx, ctx...)
 
 		l.h.Log(&Record{
-			Time:  time.Now(),
-			Lvl:   lvl,
-			Msg:   msg,
-			Ctx:   newContext(l.ctx, newCtx),
-			CustomCaller:caller,
+			Time:         time.Now(),
+			Lvl:          lvl,
+			Msg:          msg,
+			Ctx:          newContext(l.ctx, newCtx),
+			CustomCaller: caller,
 			KeyNames: RecordKeyNames{
-				Time: timeKey,
-				Msg:  msgKey,
-				Lvl:  lvlKey,
-				Call: callKey,
+				Time:  timeKey,
+				Msg:   msgKey,
+				Lvl:   lvlKey,
+				Call:  callKey,
 				ReqID: reqIDKey,
 			},
 		})

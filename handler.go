@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"io"
 	"net"
+
 	//"os"
 	"reflect"
 	"sync"
-
-	"github.com/go-stack/stack"
 
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"gopkg.in/natefinch/lumberjack.v2" // --[stevenmi]
 	"sync/atomic"
+
+	"gopkg.in/natefinch/lumberjack.v2" // --[stevenmi]
 )
 
 // A Logger prints its log records by writing to a Handler.
@@ -54,7 +54,7 @@ func StreamHandler(wr io.Writer, fmtr Format) Handler {
 }
 
 // Same as StreamHandler() except filting the baseMonitor Meta meaasage
-func SelfStreamHandler(wr io.Writer, fmtr Format) Handler {		// -- stevenmi 2019-0703
+func SelfStreamHandler(wr io.Writer, fmtr Format) Handler { // -- stevenmi 2019-0703
 	h := FuncHandler(func(r *Record) error {
 		if r.MetaK == BaseMonitor.String() {
 			return nil
@@ -345,7 +345,8 @@ func (h *closingHandler) Close() error {
 // the calling function to the context with key "caller".
 func CallerFileHandler(h Handler) Handler {
 	return FuncHandler(func(r *Record) error {
-		r.Ctx = append(r.Ctx, "caller", fmt.Sprint(r.Call))
+		//r.Ctx = append(r.Ctx, "caller", fmt.Sprint(r.Call))
+		r.Ctx = append(r.Ctx, "caller", r.Call)
 		return h.Log(r)
 	})
 }
@@ -354,7 +355,8 @@ func CallerFileHandler(h Handler) Handler {
 // the context with key "fn".
 func CallerFuncHandler(h Handler) Handler {
 	return FuncHandler(func(r *Record) error {
-		r.Ctx = append(r.Ctx, "fn", fmt.Sprintf("%+n", r.Call))
+		//r.Ctx = append(r.Ctx, "fn", fmt.Sprintf("%+n", r.Call))
+		r.Ctx = append(r.Ctx, "fn", r.Call)
 		return h.Log(r)
 	})
 }
@@ -364,15 +366,15 @@ func CallerFuncHandler(h Handler) Handler {
 // call sites inside matching []'s. The most recent call site is listed first.
 // Each call site is formatted according to format. See the documentation of
 // package github.com/go-stack/stack for the list of supported formats.
-func CallerStackHandler(format string, h Handler) Handler {
-	return FuncHandler(func(r *Record) error {
-		s := stack.Trace().TrimBelow(r.Call).TrimRuntime()
-		if len(s) > 0 {
-			r.Ctx = append(r.Ctx, "stack", fmt.Sprintf(format, s))
-		}
-		return h.Log(r)
-	})
-}
+//func CallerStackHandler(format string, h Handler) Handler {
+//	return FuncHandler(func(r *Record) error {
+//		// s := stack.Trace().TrimBelow(r.Call).TrimRuntime()
+//		if len(r.Call) > 0 {
+//			r.Ctx = append(r.Ctx, "stack", r.Call)
+//		}
+//		return h.Log(r)
+//	})
+//}
 
 // FilterHandler returns a Handler that only writes records to the
 // wrapped Handler if the given function evaluates true. For example,
@@ -528,9 +530,9 @@ func LazyHandler(h Handler) Handler {
 					hadErr = true
 					r.Ctx[i] = err
 				} else {
-					if cs, ok := v.(stack.CallStack); ok {
-						v = cs.TrimBelow(r.Call).TrimRuntime()
-					}
+					// if cs, ok := v.(stack.CallStack); ok {
+					// 	v = cs.TrimBelow(r.Call).TrimRuntime()
+					// }
 					r.Ctx[i] = v
 				}
 			}

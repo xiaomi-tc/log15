@@ -1,14 +1,15 @@
 package log15
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/xiaomi-tc/log15/structured"
 )
 
 const (
@@ -17,6 +18,23 @@ const (
 	termTimeFormat = "01-02|15:04:05"
 	floatFormat    = 'f'
 	termMsgJust    = 40
+
+	// DurationFieldUnit defines the unit for time.Duration type fields added
+	// using the Dur method.
+	DurationFieldUnit = time.Millisecond
+
+	// DurationFieldInteger renders Dur fields as integer instead of float if
+	// set to true.
+	DurationFieldInteger = false
+)
+
+var (
+	enc     structured.Encoder
+	bufPool = &sync.Pool{
+		New: func() interface{} {
+			return make([]byte, 0, 256)
+		},
+	}
 )
 
 type Format interface {
@@ -61,35 +79,36 @@ func TerminalFormat() Format {
 			color = 36
 		}
 
-		b := &bytes.Buffer{}
+		var buf = make([]byte, 0, 256)
 		lvl := strings.ToUpper(r.Lvl.String())
-		if color > 0 {
-			if r.RequestID != "" {
-				fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s][%s][%s=%s] ", color, lvl, r.Time.Format(termTimeFormat),
-					r.Call.String(), r.KeyNames.ReqID, r.RequestID)
-			} else {
-				fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s][%s] ", color, lvl, r.Time.Format(termTimeFormat), r.Call.String())
-			}
-		} else {
-			if r.RequestID != "" {
-				fmt.Fprintf(b, "[%s][%s][%s][%s=%s] ", lvl, r.Call.String(), r.Time.Format(termTimeFormat),
-					r.KeyNames.ReqID, r.RequestID)
-			} else {
-				fmt.Fprintf(b, "[%s][%s][%s] ", lvl, r.Time.Format(termTimeFormat), r.Call.String())
-			}
+
+		// head
+		buf = appendColordString(buf, lvl, color)
+		buf = append(buf, ' ')
+
+		buf = append(buf, '[')
+		buf = enc.AppendTime(buf, r.Time, timeFormat)
+		buf = append(buf, "] ["...)
+		buf = append(buf, []byte(r.Call)...)
+		buf = append(buf, ']')
+		if r.RequestID != "" {
+			buf = append(buf, " ["...)
+			buf = append(buf, []byte(r.KeyNames.ReqID)...)
+			buf = append(buf, '=')
+			buf = append(buf, []byte(r.RequestID)...)
+			buf = append(buf, ']')
 		}
 
-		// try to justify the log output for short messages
-		//if len(r.Ctx) > 0 && len(r.Msg) < termMsgJust {
-		//	b.Write(bytes.Repeat([]byte{' '}, termMsgJust-len(r.Msg)))
-		//}
+		// msg
+		buf = append(buf, ' ')
+		buf = appendColordString(buf, r.KeyNames.Msg, color)
+		buf = append(buf, '=')
+		buf = enc.AppendString(buf, r.Msg)
 
-		// print the keys logfmt style
-		common := []interface{}{r.KeyNames.Msg, r.Msg}
-		logfmt(b, append(common, r.Ctx...), color)
-		//logfmt(b, r.Ctx, color)
+		// fields
+		buf = logfmt(buf, r.Ctx, color)
 
-		return b.Bytes()
+		return buf
 	})
 }
 
@@ -107,63 +126,57 @@ func LogfmtFormat() Format {
 
 		var caller string
 		if r.CustomCaller == "" {
-			caller = r.Call.String()
+			caller = r.Call
 		} else {
 			caller = r.CustomCaller
 		}
 
-		// create log head  -- [steven] 2019-9-18
-		buf := &bytes.Buffer{}
+		var buf = make([]byte, 0, 256)
+
+		// log head
+		buf = append(buf, '[')
+		buf = enc.AppendTime(buf, r.Time, timeFormat)
+		buf = append(buf, "] ["...)
+		buf = append(buf, []byte(r.Lvl.String())...)
+		buf = append(buf, "] ["...)
+		buf = append(buf, []byte(caller)...)
+		buf = append(buf, "] "...)
 		if r.RequestID != "" {
-			fmt.Fprintf(buf, "[%s] [%s] [%s] [%s=%s] ", r.Time.Format(timeFormat),r.Lvl, caller, r.KeyNames.ReqID, r.RequestID)
-		} else {
-			fmt.Fprintf(buf, "[%s] [%s] [%s] ", r.Time.Format(timeFormat),r.Lvl, caller)
+			buf = append(buf, " ["...)
+			buf = append(buf, []byte(r.KeyNames.ReqID)...)
+			buf = append(buf, '=')
+			buf = append(buf, []byte(r.RequestID)...)
+			buf = append(buf, "] "...)
 		}
 
-		//common := []interface{}{r.KeyNames.Time, r.Time, r.KeyNames.Lvl, r.Lvl, r.KeyNames.Call, caller}
-		common := []interface{}{r.KeyNames.Msg, r.Msg}
+		// msg
+		buf = appendFields(buf, r.KeyNames.Msg, r.Msg)
 
-		logfmt(buf, append(common, r.Ctx...), 0)
-		return buf.Bytes()
+		// fields
+		buf = logfmt(buf, r.Ctx, 0)
+
+		return buf
 	})
 }
 
-func logfmt(buf *bytes.Buffer, ctx []interface{}, color int) {
-	for i := 0; i < len(ctx); i += 2 {
-		if i != 0 {
-			buf.WriteByte(' ')
-		}
+func logfmt(buf []byte, ctx []interface{}, color int) []byte {
+	var sz = len(ctx)
+	for i := 0; i < sz; i += 2 {
+		buf = append(buf, ' ')
 
 		k, ok := ctx[i].(string)
-		v := formatLogfmtValue(ctx[i+1])
+		v := ctx[i+1]
 		if !ok {
-			k, v = errorKey, formatLogfmtValue(k)
+			k, v = errorKey, k
 		}
 
-		// XXX: we should probably check that all of your key bytes aren't invalid
-		if color > 0 {
-			fmt.Fprintf(buf, "\x1b[%dm%s\x1b[0m=%s", color, k, v)
-		} else {
-			fmt.Fprintf(buf, " %s=%s", k, v)
-			//if i < 5 {
-			//	buf.WriteByte('[')
-			//} else {
-			//	if i==6 && k== reqIDKey{
-			//		buf.WriteByte('[')
-			//	}
-			//	buf.WriteString(k)
-			//	buf.WriteByte('=')
-			//}
-			//buf.WriteString(v)
-			//if i < 5 {
-			//	buf.WriteByte(']')
-			//} else if i==6 && k== reqIDKey{
-			//	buf.WriteByte(']')
-			//}
-		}
+		buf = appendColordString(buf, k, color)
+		buf = append(buf, '=')
+		buf = appendVal(buf, v)
 	}
 
-	buf.WriteByte('\n')
+	buf = append(buf, '\n')
+	return buf
 }
 
 // JsonFormat formats log records as JSON objects separated by newlines.
@@ -252,76 +265,217 @@ func formatJsonValue(value interface{}) interface{} {
 
 // formatValue formats a value for serialization
 func formatLogfmtValue(value interface{}) string {
-	if value == nil {
-		return "nil"
-	}
-
-	if t, ok := value.(time.Time); ok {
-		// Performance optimization: No need for escaping since the provided
-		// timeFormat doesn't have any escape characters, and escaping is
-		// expensive.
-		return t.Format(timeFormat)
-	}
-	value = formatShared(value)
-	switch v := value.(type) {
-	case bool:
-		return strconv.FormatBool(v)
-	case float32:
-		return strconv.FormatFloat(float64(v), floatFormat, 3, 64)
-	case float64:
-		return strconv.FormatFloat(v, floatFormat, 3, 64)
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
-		return fmt.Sprintf("%d", value)
-	case string:
-		return escapeString(v)
-	default:
-		return escapeString(fmt.Sprintf("%+v", value))
-	}
+	var buf = make([]byte, 0, 32)
+	buf = appendVal(buf, value)
+	return string(buf)
 }
 
-var stringBufPool = sync.Pool{
-	New: func() interface{} { return new(bytes.Buffer) },
-}
-
-func escapeString(s string) string {
-	needsQuotes := false
-	needsEscape := false
-	for _, r := range s {
-		if r <= ' ' || r == '=' || r == '"' {
-			needsQuotes = true
-		}
-		if r == '\\' || r == '"' || r == '\n' || r == '\r' || r == '\t' {
-			needsEscape = true
-		}
-	}
-	if needsEscape == false && needsQuotes == false {
-		return s
-	}
-	e := stringBufPool.Get().(*bytes.Buffer)
-	e.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '\\', '"':
-			e.WriteByte('\\')
-			e.WriteByte(byte(r))
-		case '\n':
-			e.WriteString("\\n")
-		case '\r':
-			e.WriteString("\\r")
-		case '\t':
-			e.WriteString("\\t")
-		default:
-			e.WriteRune(r)
-		}
-	}
-	e.WriteByte('"')
-	var ret string
-	if needsQuotes {
-		ret = e.String()
+func appendColordString(dst []byte, k string, color int) []byte {
+	if color > 0 {
+		dst = append(dst, "\x1b["...)
+		dst = enc.AppendInt(dst, color)
+		dst = append(dst, 'm')
+		dst = append(dst, []byte(k)...)
+		dst = append(dst, "\x1b[0m"...)
 	} else {
-		ret = string(e.Bytes()[1 : e.Len()-1])
+		dst = append(dst, []byte(k)...)
 	}
-	e.Reset()
-	stringBufPool.Put(e)
-	return ret
+	return dst
+}
+
+func appendFields(dst []byte, key string, val interface{}) []byte {
+	dst = enc.AppendKey(dst, key)
+	dst = appendVal(dst, val)
+	return dst
+}
+
+func appendVal(dst []byte, val interface{}) []byte {
+	switch val := val.(type) {
+	case string:
+		dst = enc.AppendString(dst, val)
+	case []byte:
+		dst = enc.AppendBytes(dst, val)
+	case error:
+		dst = enc.AppendString(dst, val.Error())
+	case []error:
+		dst = enc.AppendArrayStart(dst)
+		for i, err := range val {
+			dst = enc.AppendString(dst, err.Error())
+
+			if i < (len(val) - 1) {
+				enc.AppendArrayDelim(dst)
+			}
+		}
+		dst = enc.AppendArrayEnd(dst)
+	case bool:
+		dst = enc.AppendBool(dst, val)
+	case int:
+		dst = enc.AppendInt(dst, val)
+	case int8:
+		dst = enc.AppendInt8(dst, val)
+	case int16:
+		dst = enc.AppendInt16(dst, val)
+	case int32:
+		dst = enc.AppendInt32(dst, val)
+	case int64:
+		dst = enc.AppendInt64(dst, val)
+	case uint:
+		dst = enc.AppendUint(dst, val)
+	case uint8:
+		dst = enc.AppendUint8(dst, val)
+	case uint16:
+		dst = enc.AppendUint16(dst, val)
+	case uint32:
+		dst = enc.AppendUint32(dst, val)
+	case uint64:
+		dst = enc.AppendUint64(dst, val)
+	case float32:
+		dst = enc.AppendFloat32(dst, val)
+	case float64:
+		dst = enc.AppendFloat64(dst, val)
+	case time.Time:
+		dst = enc.AppendTime(dst, val, timeFormat)
+	case time.Duration:
+		dst = enc.AppendDuration(dst, val, DurationFieldUnit, DurationFieldInteger)
+	case *string:
+		if val != nil {
+			dst = enc.AppendString(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *bool:
+		if val != nil {
+			dst = enc.AppendBool(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *int:
+		if val != nil {
+			dst = enc.AppendInt(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *int8:
+		if val != nil {
+			dst = enc.AppendInt8(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *int16:
+		if val != nil {
+			dst = enc.AppendInt16(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *int32:
+		if val != nil {
+			dst = enc.AppendInt32(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *int64:
+		if val != nil {
+			dst = enc.AppendInt64(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *uint:
+		if val != nil {
+			dst = enc.AppendUint(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *uint8:
+		if val != nil {
+			dst = enc.AppendUint8(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *uint16:
+		if val != nil {
+			dst = enc.AppendUint16(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *uint32:
+		if val != nil {
+			dst = enc.AppendUint32(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *uint64:
+		if val != nil {
+			dst = enc.AppendUint64(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *float32:
+		if val != nil {
+			dst = enc.AppendFloat32(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *float64:
+		if val != nil {
+			dst = enc.AppendFloat64(dst, *val)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *time.Time:
+		if val != nil {
+			dst = enc.AppendTime(dst, *val, timeFormat)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case *time.Duration:
+		if val != nil {
+			dst = enc.AppendDuration(dst, *val, DurationFieldUnit, DurationFieldInteger)
+		} else {
+			dst = enc.AppendNil(dst)
+		}
+	case []string:
+		dst = enc.AppendStrings(dst, val)
+	case []bool:
+		dst = enc.AppendBools(dst, val)
+	case []int:
+		dst = enc.AppendInts(dst, val)
+	case []int8:
+		dst = enc.AppendInts8(dst, val)
+	case []int16:
+		dst = enc.AppendInts16(dst, val)
+	case []int32:
+		dst = enc.AppendInts32(dst, val)
+	case []int64:
+		dst = enc.AppendInts64(dst, val)
+	case []uint:
+		dst = enc.AppendUints(dst, val)
+	// case []uint8:
+	// 	dst = enc.AppendUints8(dst, val)
+	case []uint16:
+		dst = enc.AppendUints16(dst, val)
+	case []uint32:
+		dst = enc.AppendUints32(dst, val)
+	case []uint64:
+		dst = enc.AppendUints64(dst, val)
+	case []float32:
+		dst = enc.AppendFloats32(dst, val)
+	case []float64:
+		dst = enc.AppendFloats64(dst, val)
+	case []time.Time:
+		dst = enc.AppendTimes(dst, val, timeFormat)
+	case []time.Duration:
+		dst = enc.AppendDurations(dst, val, DurationFieldUnit, DurationFieldInteger)
+	case nil:
+		dst = enc.AppendNil(dst)
+	case net.IP:
+		dst = enc.AppendIPAddr(dst, val)
+	case net.IPNet:
+		dst = enc.AppendIPPrefix(dst, val)
+	case net.HardwareAddr:
+		dst = enc.AppendMACAddr(dst, val)
+	default:
+		dst = enc.AppendInterface(dst, val)
+	}
+
+	return dst
 }
